@@ -167,28 +167,57 @@ public class RPGMDecrypter {
             }
         }
 
-        // 跳过 Fake Header，解密剩余部分
+        // ─── 尝试多种解密策略 ───
+        // 策略 A: 跳过 Fake Header，对剩余数据 XOR
         int dataLen = encrypted.length - FAKE_HEADER_LENGTH;
         byte[] decrypted = new byte[dataLen];
         System.arraycopy(encrypted, FAKE_HEADER_LENGTH, decrypted, 0, dataLen);
         xorData(decrypted, key);
+        if (hasPNGSignature(decrypted)) return decrypted;
 
-        // 验证解密结果是否有效 PNG
-        if (hasPNGSignature(decrypted)) {
-            return decrypted;
-        }
-
-        // 如果带 header 验证失败，尝试无 header 的 XOR 解密
-        // （某些工具可能移除了 header）
+        // 策略 B: 先对全体数据（含 Fake Header）XOR，再跳过 Fake Header
         byte[] xorFull = new byte[(int) fileLen];
         System.arraycopy(encrypted, 0, xorFull, 0, (int) fileLen);
         xorData(xorFull, key);
+        byte[] xorFullSkipped = new byte[xorFull.length - FAKE_HEADER_LENGTH];
+        System.arraycopy(xorFull, FAKE_HEADER_LENGTH, xorFullSkipped, 0, xorFullSkipped.length);
+        if (hasPNGSignature(xorFullSkipped)) return xorFullSkipped;
 
-        if (hasPNGSignature(xorFull)) {
-            return xorFull;
+        // 重新还原 xorFull 用于后续尝试
+        System.arraycopy(encrypted, 0, xorFull, 0, (int) fileLen);
+        xorData(xorFull, key);
+        if (hasPNGSignature(xorFull)) return xorFull;
+
+        // 策略 C: 跳过 Fake Header 后，从偏移 4 开始 XOR（某些实现从 chunk 类型字段开始 XOR）
+        byte[] decryptedOff4 = new byte[dataLen];
+        System.arraycopy(encrypted, FAKE_HEADER_LENGTH, decryptedOff4, 0, dataLen);
+        // 保留前 4 字节（chunk 长度），从偏移 4 开始 XOR
+        byte[] keyForOffset = new byte[key.length];
+        System.arraycopy(key, 0, keyForOffset, 0, key.length);
+        for (int i = 4; i < decryptedOff4.length; i++) {
+            decryptedOff4[i] ^= key[(i - 4) % key.length];
         }
+        if (hasPNGSignature(decryptedOff4)) return decryptedOff4;
 
-        // 尝试在整个数据中寻找 PNG 签名
+        // 策略 D: 跳过 Fake Header 后，从偏移 8 开始 XOR（从 chunk 数据部分开始 XOR）
+        byte[] decryptedOff8 = new byte[dataLen];
+        System.arraycopy(encrypted, FAKE_HEADER_LENGTH, decryptedOff8, 0, dataLen);
+        for (int i = 8; i < decryptedOff8.length; i++) {
+            decryptedOff8[i] ^= key[(i - 8) % key.length];
+        }
+        if (hasPNGSignature(decryptedOff8)) return decryptedOff8;
+
+        // 策略 E: 保留 PNG 签名 8 字节明文，从偏移 8（即 IHDR chunk 开头）开始 XOR
+        // 这是 RPG Maker MZ 常见模式
+        byte[] decryptedSig = new byte[dataLen];
+        System.arraycopy(encrypted, FAKE_HEADER_LENGTH, decryptedSig, 0, dataLen);
+        // 前 8 字节（PNG 签名）不 XOR
+        for (int i = 8; i < decryptedSig.length; i++) {
+            decryptedSig[i] ^= key[(i - 8) % key.length];
+        }
+        if (hasPNGSignature(decryptedSig)) return decryptedSig;
+
+        // 策略 F: 找到 PNG 签名所在位置，从那之后才开始解密
         int sigOffset = findPNGSignature(decrypted);
         if (sigOffset >= 0) {
             byte[] trimmed = new byte[decrypted.length - sigOffset];
@@ -196,14 +225,35 @@ public class RPGMDecrypter {
             if (hasPNGSignature(trimmed)) return trimmed;
         }
 
-        sigOffset = findPNGSignature(xorFull);
+        sigOffset = findPNGSignature(xorFullSkipped);
         if (sigOffset >= 0) {
-            byte[] trimmed = new byte[xorFull.length - sigOffset];
-            System.arraycopy(xorFull, sigOffset, trimmed, 0, trimmed.length);
+            byte[] trimmed = new byte[xorFullSkipped.length - sigOffset];
+            System.arraycopy(xorFullSkipped, sigOffset, trimmed, 0, trimmed.length);
             if (hasPNGSignature(trimmed)) return trimmed;
         }
 
-        Log.w(TAG, "密钥解密后仍不是有效 PNG，密钥可能不正确");
+        // 策略 G: 尝试跳过 Fake Header 后，保留 chunk length + type 明文，仅 XOR chunk data
+        byte[] chunkDecrypt = new byte[dataLen];
+        System.arraycopy(encrypted, FAKE_HEADER_LENGTH, chunkDecrypt, 0, dataLen);
+        int cp = 0;
+        byte[] chunkKey = new byte[key.length];
+        System.arraycopy(key, 0, chunkKey, 0, key.length);
+        while (cp + 8 <= chunkDecrypt.length) {
+            int cLen = ((chunkDecrypt[cp] & 0xFF) << 24)
+                    | ((chunkDecrypt[cp + 1] & 0xFF) << 16)
+                    | ((chunkDecrypt[cp + 2] & 0xFF) << 8)
+                    | (chunkDecrypt[cp + 3] & 0xFF);
+            // chunk length 和 type 不动，仅解密 data
+            int dataStart = cp + 8;
+            int dataEnd = Math.min(dataStart + cLen, chunkDecrypt.length);
+            for (int i = dataStart; i < dataEnd; i++) {
+                chunkDecrypt[i] ^= chunkKey[(i - dataStart) % chunkKey.length];
+            }
+            cp = dataEnd + 4; // 跳过 CRC
+        }
+        if (hasPNGSignature(chunkDecrypt)) return chunkDecrypt;
+
+        Log.w(TAG, "所有解密策略均失败，密钥可能不正确");
         return null;
     }
 
@@ -230,14 +280,41 @@ public class RPGMDecrypter {
 
         byte[] data = baos.toByteArray();
 
-        // 如果有密钥则 XOR 解密
         if (key != null && key.length > 0) {
+            // 策略 A: 标准 XOR
             xorData(data, key);
+            if (hasPNGSignature(data)) return data;
+            xorData(data, key); // 还原
+
+            // 策略 B: 从偏移 8 开始 XOR（保留 PNG 签名明文）
+            for (int i = 8; i < data.length; i++) {
+                data[i] ^= key[(i - 8) % key.length];
+            }
+            if (hasPNGSignature(data)) return data;
+            for (int i = 8; i < data.length; i++) {
+                data[i] ^= key[(i - 8) % key.length];
+            }
+
+            // 策略 C: 从 chunk data 开始 XOR（跳过 length + type）
+            byte[] chunkDec = new byte[data.length];
+            System.arraycopy(data, 0, chunkDec, 0, data.length);
+            int cp = 0;
+            while (cp + 8 <= chunkDec.length) {
+                int cLen = ((chunkDec[cp] & 0xFF) << 24)
+                        | ((chunkDec[cp + 1] & 0xFF) << 16)
+                        | ((chunkDec[cp + 2] & 0xFF) << 8)
+                        | (chunkDec[cp + 3] & 0xFF);
+                int dataStart = cp + 8;
+                int dataEnd = Math.min(dataStart + cLen, chunkDec.length);
+                for (int i = dataStart; i < dataEnd; i++) {
+                    chunkDec[i] ^= key[(i - dataStart) % key.length];
+                }
+                cp = dataEnd + 4;
+            }
+            if (hasPNGSignature(chunkDec)) return chunkDec;
         }
 
-        // 验证
-        if (hasPNGSignature(data)) return data;
-
+        // 无密钥模式：找 PNG 签名
         int sigOffset = findPNGSignature(data);
         if (sigOffset >= 0) {
             byte[] trimmed = new byte[data.length - sigOffset];
