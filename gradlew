@@ -6,7 +6,8 @@
 ##############################################################################
 APP_NAME="Gradle"
 APP_BASE_NAME=$(basename "$0")
-DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
+# DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
+DEFAULT_JVM_OPTS=''
 MAX_FD="maximum"
 warn () { echo "$*"; }
 die () { echo "$*"; exit 1; }
