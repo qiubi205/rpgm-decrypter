@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 圆形背景 -->
+    <path
+        android:fillColor="#3498DB"
+        android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0" />
+    <!-- "锁"图标 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,65V48c0,-6.6 5.4,-12 12,-12s12,5.4 12,12v17h-3V48c0,-5 -4,-9 -9,-9s-9,4 -9,9v17h-3z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,65h20c2.2,0 4,1.8 4,4v10c0,2.2 -1.8,4 -4,4h-20c-2.2,0 -4,-1.8 -4,-4V69c0,-2.2 1.8,-4 4,-4z" />
+    <!-- 解锁箭头 -->
+    <path
+        android:fillColor="#2ECC71"
+        android:pathData="M64,76l-6,6l-6,-6h4v-7h4v7h4z" />
+</vector>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.RPGMDecrypter" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">#3498DB</item>
+        <item name="colorPrimaryVariant">#2E86C1</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#2ECC71</item>
+        <item name="colorSecondaryVariant">#27AE60</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="android:colorBackground">#F5F5F8</item>
+        <item name="colorSurface">#FFFFFF</item>
+    </style>
+</resources>
