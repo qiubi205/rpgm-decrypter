@@ -346,9 +346,11 @@ public class MainActivity extends AppCompatActivity {
 
         // 读取密钥
         String keyText = keyInput.getText().toString().trim();
-        byte[] key = null;
+        final byte[] keyFinal;
         if (!keyText.isEmpty()) {
-            key = RPGMDecrypter.hexToBytes(keyText);
+            keyFinal = RPGMDecrypter.hexToBytes(keyText);
+        } else {
+            keyFinal = null;
         }
 
         ProgressDialog progress = new ProgressDialog(this);
@@ -385,7 +387,7 @@ public class MainActivity extends AppCompatActivity {
                         continue;
                     }
 
-                    byte[] decrypted = RPGMDecrypter.decryptStream(is, key);
+                    byte[] decrypted = RPGMDecrypter.decryptStream(is, keyFinal);
                     is.close();
 
                     if (decrypted == null) {
@@ -446,7 +448,7 @@ public class MainActivity extends AppCompatActivity {
                 progress.dismiss();
 
                 StringBuilder summary = new StringBuilder();
-                String mode = (key != null) ? "🔑 有密钥模式" : "🔓 无密钥模式（跳过头部）";
+                String mode = (keyFinal != null) ? "🔑 有密钥模式" : "🔓 无密钥模式（跳过头部）";
                 summary.append("━━━ ").append(mode).append(" ━━━\n");
                 summary.append("✅ 成功: ").append(finalSuccess).append(" 个\n");
                 if (finalFailed > 0) {
