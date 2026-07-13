@@ -45,6 +45,7 @@ public class MainActivity extends AppCompatActivity {
     private Button selectFilesButton;
     private Button selectOutputButton;
     private Button decryptButton;
+    private Button validatePngButton;
     private Button detectKeyButton;
     private Button loadKeyFromFileButton;
     private EditText keyInput;
@@ -68,6 +69,7 @@ public class MainActivity extends AppCompatActivity {
         selectFilesButton = findViewById(R.id.selectFilesButton);
         selectOutputButton = findViewById(R.id.selectOutputButton);
         decryptButton = findViewById(R.id.decryptButton);
+        validatePngButton = findViewById(R.id.validatePngButton);
         detectKeyButton = findViewById(R.id.detectKeyButton);
         loadKeyFromFileButton = findViewById(R.id.loadKeyFromFileButton);
         keyInput = findViewById(R.id.keyInput);
@@ -78,6 +80,7 @@ public class MainActivity extends AppCompatActivity {
         selectFilesButton.setOnClickListener(v -> pickFiles());
         selectOutputButton.setOnClickListener(v -> pickOutputDir());
         decryptButton.setOnClickListener(v -> startDecryption());
+        validatePngButton.setOnClickListener(v -> validatePngFile());
         detectKeyButton.setOnClickListener(v -> detectKeyFromSelectedFile());
         loadKeyFromFileButton.setOnClickListener(v -> pickKeyFile());
 
@@ -339,6 +342,63 @@ public class MainActivity extends AppCompatActivity {
         } else {
             decryptButton.setText("请选择文件和输出目录");
         }
+    }
+
+    private void validatePngFile() {
+        if (selectedFileUris.isEmpty()) {
+            Toast.makeText(this, "请先选择一个 PNG 文件", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        resultText.setText("");
+        resultScroll.setVisibility(View.VISIBLE);
+
+        new Thread(() -> {
+            StringBuilder report = new StringBuilder();
+            for (int i = 0; i < selectedFileUris.size(); i++) {
+                Uri uri = selectedFileUris.get(i);
+                String fileName = selectedFileNames.get(i);
+
+                report.append("━━━ ").append(fileName).append(" ━━━\n");
+
+                try {
+                    InputStream is = getContentResolver().openInputStream(uri);
+                    if (is == null) {
+                        report.append("❌ 无法读取文件\n\n");
+                        continue;
+                    }
+
+                    // 尝试获取文件大小
+                    long fileSize = -1;
+                    try (android.database.Cursor cursor = getContentResolver().query(
+                            uri, null, null, null, null)) {
+                        if (cursor != null && cursor.moveToFirst()) {
+                            int sizeIdx = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE);
+                            if (sizeIdx >= 0) fileSize = cursor.getLong(sizeIdx);
+                        }
+                    } catch (Exception ignored) {}
+
+                    PNGValidator.ValidationResult result;
+                    if (fileSize > 0) {
+                        result = PNGValidator.validate(is, fileSize);
+                    } else {
+                        result = PNGValidator.validate(is, -1);
+                    }
+
+                    report.append(result.getFullReport());
+                    report.append("\n");
+
+                } catch (Exception e) {
+                    report.append("❌ 检查出错: ").append(e.getMessage()).append("\n\n");
+                }
+            }
+
+            final String finalReport = report.toString();
+            runOnUiThread(() -> {
+                resultText.setText(finalReport);
+                resultScroll.post(() -> resultScroll.fullScroll(View.FOCUS_DOWN));
+            });
+        }).start();
     }
 
     private void startDecryption() {
