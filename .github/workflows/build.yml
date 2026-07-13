@@ -20,8 +20,9 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Build Release APK
-        run: ./gradlew assembleRelease
+      - name: Build Release APK with verbose logs
+        run: ./gradlew assembleRelease --stacktrace 2>&1 | tail -200
+        continue-on-error: false
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
