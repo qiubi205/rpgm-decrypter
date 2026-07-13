@@ -215,12 +215,13 @@ public class RPGMDecrypter {
         byte[] buf = new byte[8192];
         int n;
 
-        // 跳过 Fake Header
-        long skipped = 0;
-        while (skipped < FAKE_HEADER_LENGTH) {
-            long s = inputStream.skip(FAKE_HEADER_LENGTH - skipped);
-            if (s <= 0) break;
-            skipped += s;
+        // 跳过 Fake Header（用 read 而非 skip，SAF InputStream 的 skip() 可能不可靠）
+        byte[] headerBuf = new byte[FAKE_HEADER_LENGTH];
+        int headerRead = 0;
+        while (headerRead < FAKE_HEADER_LENGTH) {
+            int r = inputStream.read(headerBuf, headerRead, FAKE_HEADER_LENGTH - headerRead);
+            if (r <= 0) break;
+            headerRead += r;
         }
 
         while ((n = inputStream.read(buf)) > 0) {
