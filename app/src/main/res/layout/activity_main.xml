@@ -7,14 +7,14 @@
     android:padding="16dp"
     android:background="#F0F4F8">
 
-    <!-- 标题区域 -->
+    <!-- 标题 -->
     <LinearLayout
         android:id="@+id/headerLayout"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:gravity="center"
-        android:layout_marginBottom="20dp"
+        android:layout_marginBottom="16dp"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
@@ -24,18 +24,91 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="RPGM Decrypter"
-            android:textSize="26sp"
+            android:textSize="24sp"
             android:textStyle="bold"
             android:textColor="#2C3E50" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text=".png_ → .png  一键解密"
-            android:textSize="13sp"
+            android:text="基于 Petschko/RPG-Maker-MV-Decrypter"
+            android:textSize="12sp"
             android:textColor="#7F8C8D"
             android:layout_marginTop="2dp" />
     </LinearLayout>
+
+    <!-- 密钥输入区 -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/keyCard"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="2dp"
+        android:layout_marginBottom="12dp"
+        app:layout_constraintTop_toBottomOf="@id/headerLayout"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="12dp">
+
+            <TextView
+                android:id="@+id/keyLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🔑 加密密钥（hex，可选）"
+                android:textSize="13sp"
+                android:textColor="#34495E"
+                android:textStyle="bold"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintStart_toStartOf="parent" />
+
+            <EditText
+                android:id="@+id/keyInput"
+                android:layout_width="0dp"
+                android:layout_height="42dp"
+                android:hint="留空 = 无密钥模式（跳过头部）"
+                android:textSize="14sp"
+                android:inputType="text"
+                android:fontFamily="monospace"
+                android:background="@drawable/key_input_bg"
+                android:paddingHorizontal="10dp"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                app:layout_constraintTop_toBottomOf="@id/keyLabel"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/detectKeyButton"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:text="🔍 从文件检测"
+                android:textSize="12sp"
+                android:textColor="#3498DB"
+                app:layout_constraintTop_toBottomOf="@id/keyInput"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toStartOf="@id/loadKeyFromFileButton"
+                android:layout_marginTop="6dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/loadKeyFromFileButton"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:text="📂 从 System.json 导入"
+                android:textSize="12sp"
+                android:textColor="#2ECC71"
+                app:layout_constraintTop_toBottomOf="@id/keyInput"
+                app:layout_constraintStart_toEndOf="@id/detectKeyButton"
+                app:layout_constraintEnd_toEndOf="parent"
+                android:layout_marginTop="6dp" />
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </androidx.cardview.widget.CardView>
 
     <!-- 文件信息卡片 -->
     <androidx.cardview.widget.CardView
@@ -44,8 +117,8 @@
         android:layout_height="wrap_content"
         app:cardCornerRadius="12dp"
         app:cardElevation="2dp"
-        android:layout_marginBottom="16dp"
-        app:layout_constraintTop_toBottomOf="@id/headerLayout"
+        android:layout_marginBottom="12dp"
+        app:layout_constraintTop_toBottomOf="@id/keyCard"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
@@ -56,22 +129,22 @@
             android:text="未选择文件"
             android:textSize="14sp"
             android:textColor="#34495E"
-            android:padding="16dp"
+            android:padding="14dp"
             android:lineSpacingExtra="4dp" />
     </androidx.cardview.widget.CardView>
 
-    <!-- 操作按钮 -->
+    <!-- 按钮 -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/selectFilesButton"
         style="@style/Widget.Material3.Button.OutlinedButton"
         android:layout_width="0dp"
-        android:layout_height="56dp"
-        android:text="📂  选择 .png_ 文件"
-        android:textSize="16sp"
+        android:layout_height="48dp"
+        android:text="📂 选择 .png_ 文件"
+        android:textSize="15sp"
         android:textColor="#3498DB"
         app:strokeColor="#3498DB"
-        app:cornerRadius="12dp"
-        android:layout_marginBottom="10dp"
+        app:cornerRadius="10dp"
+        android:layout_marginBottom="8dp"
         app:layout_constraintTop_toBottomOf="@id/fileInfoCard"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
@@ -80,13 +153,13 @@
         android:id="@+id/selectOutputButton"
         style="@style/Widget.Material3.Button.OutlinedButton"
         android:layout_width="0dp"
-        android:layout_height="56dp"
-        android:text="📁  选择输出目录"
-        android:textSize="16sp"
+        android:layout_height="48dp"
+        android:text="📁 选择输出目录"
+        android:textSize="15sp"
         android:textColor="#2ECC71"
         app:strokeColor="#2ECC71"
-        app:cornerRadius="12dp"
-        android:layout_marginBottom="16dp"
+        app:cornerRadius="10dp"
+        android:layout_marginBottom="12dp"
         app:layout_constraintTop_toBottomOf="@id/selectFilesButton"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
@@ -95,32 +168,30 @@
         android:id="@+id/decryptButton"
         style="@style/Widget.Material3.Button"
         android:layout_width="0dp"
-        android:layout_height="60dp"
+        android:layout_height="54dp"
         android:text="请选择文件"
-        android:textSize="18sp"
+        android:textSize="16sp"
         android:enabled="false"
         app:cornerRadius="12dp"
         android:textColor="#FFFFFF"
         app:backgroundTint="#3498DB"
-        android:layout_marginBottom="16dp"
+        android:layout_marginBottom="12dp"
         app:layout_constraintTop_toBottomOf="@id/selectOutputButton"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- 结果区域 -->
+    <!-- 结果 -->
     <ScrollView
         android:id="@+id/resultScroll"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:visibility="gone"
-        android:layout_marginTop="4dp"
         app:layout_constraintTop_toBottomOf="@id/decryptButton"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
         <androidx.cardview.widget.CardView
-            android:id="@+id/resultCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:cardCornerRadius="12dp"
@@ -130,10 +201,10 @@
                 android:id="@+id/resultText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:textColor="#2C3E50"
                 android:fontFamily="monospace"
-                android:padding="16dp"
+                android:padding="14dp"
                 android:lineSpacingExtra="2dp" />
         </androidx.cardview.widget.CardView>
     </ScrollView>

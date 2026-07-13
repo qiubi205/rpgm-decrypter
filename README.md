@@ -1,41 +1,64 @@
 # RPGM Decrypter (Android)
 
-> RPG Maker MV / MZ `.png_` 图像文件一键解密工具
-
-基于 [Petschko/RPG-Maker-MV-Decrypter](https://github.com/Petschko/RPG-Maker-MV-Decrypter) 的算法实现，专为 Android 平台打造。
+> RPG Maker MV / MZ `.png_` 图像文件解密工具  
+> 基于 [Petschko/RPG-Maker-MV-Decrypter](https://github.com/Petschko/RPG-Maker-MV-Decrypter) 的算法实现
 
 ## 功能
 
-- ✅ **一键解密** `.png_` → `.png` — 无密钥即可还原 RPG Maker MV/MZ 加密的图片
-- ✅ **批量处理** — 支持同时选择多个 `.png_` 文件批量解密
-- ✅ **文件管理** — 支持 SAF（Storage Access Framework）和直接文件访问
-- ✅ **进度显示** — 实时显示解密进度和详细日志
-- ✅ **自定义输出** — 可选择任意目录保存解密结果
+- 🔓 **无密钥还原** — 跳过 16 字节伪造头部，直接还原图片
+- 🔑 **有密钥解密** — 支持输入 hex 格式密钥进行 XOR 解密
+- 🔍 **自动检测密钥** — 从加密文件中自动提取 XOR 密钥
+- 📂 **从 System.json 导入密钥** — 选择游戏项目的 System.json 自动提取
+- ✅ **批量处理** — 同时选择多个 .png_ 文件一次性解密
+- 📁 **SAF 文件访问** — 支持 Android 10+ 的 Storage Access Framework
+- 📊 **实时日志** — 每条文件解密结果即时显示
 
 ## 解密原理
 
-RPG Maker MV/MZ 在输出加密游戏时，会在标准 PNG 文件头部插入 **16 字节的伪造 header**（Fake Header）：
+RPG Maker MV/MZ 的图片加密分两层：
 
-| 偏移 | 大小 | 内容 |
-|------|------|------|
-| 0 | 4 | `RPGM` 签名 |
-| 4 | 2 | 版本号 |
-| 6 | 2 | 保留字段 |
-| 8 | 8 | 时间戳 / GUID |
+### 1. 伪造头部（Fake Header）
 
-**无密钥模式**：直接跳过前 16 字节，剩余部分即为标准 PNG 文件。
+在文件前加 16 字节伪造头部：
 
-> 注：音频文件（.rpgmvm / .rpgmvo）需要 XOR 密钥解密，本工具暂不支持。
+```
+字节 0-3:   "RPGM" 签名
+字节 4-5:   版本号（MV=0x0003, MZ=0x0001）
+字节 6-7:   保留字段
+字节 8-15:  GUID / 时间戳
+```
 
-## 截图
+### 2. XOR 数据加密（可选）
 
-| 主界面 | 批量选择 | 解密结果 |
-|--------|----------|----------|
-| ![主界面](screenshots/main.png) | ![批量选择](screenshots/select.png) | ![结果](screenshots/result.png) |
+使用 `encryptionKey` 对跳过头部后的数据进行 XOR 加密：
 
-## 下载
+```
+for i in 0..data.length:
+    data[i] ^= key[i % key.length]
+```
 
-前往 [Releases](https://github.com/qiubi205/rpgm-decrypter/releases) 下载最新 APK。
+密钥存储在游戏目录下的 `System.json` 的 `"encryptionKey"` 字段中（hex string）。
+
+**不是所有游戏都用了密钥加密**，部分游戏只在文件头加了 16 字节伪造头部，直接用"无密钥模式"即可还原。
+
+### 3. 密钥自动检测
+
+利用 PNG 文件固定的 8 字节签名，从加密数据头部 XOR 反推密钥：
+
+```
+known_plaintext = 0x89504E470D0A1A0A  (PNG签名)
+key[0..7] = encrypted[0..7] ^ known_plaintext
+```
+
+如果密钥正好是 8 或 16 字节，用此方法可自动恢复。
+
+## 使用方法
+
+1. 打开 App
+2. （可选）输入密钥 → 或点击"从文件检测"/"从 System.json 导入"
+3. 选择 .png_ 文件（支持多选）
+4. 选择输出目录
+5. 点击解密按钮
 
 ## 构建
 
@@ -45,11 +68,11 @@ cd rpgm-decrypter
 ./gradlew assembleRelease
 ```
 
-APK 输出位置：`app/build/outputs/apk/release/app-release.apk`
+APK 输出：`app/build/outputs/apk/release/app-release.apk`
 
 ## 许可
 
-[MIT License](LICENSE)
+MIT License
 
 ## 致谢
 

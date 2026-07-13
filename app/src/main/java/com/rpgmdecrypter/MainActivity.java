@@ -9,11 +9,10 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -41,14 +40,17 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_OUTPUT_PICK = 1002;
     private static final int REQUEST_PERMISSION = 1003;
     private static final int REQUEST_MANAGE_STORAGE = 1004;
+    private static final int REQUEST_KEY_FILE_PICK = 1005;
 
-    private TextView titleText;
-    private TextView fileInfoText;
     private Button selectFilesButton;
     private Button selectOutputButton;
     private Button decryptButton;
-    private ScrollView resultScroll;
+    private Button detectKeyButton;
+    private Button loadKeyFromFileButton;
+    private EditText keyInput;
+    private TextView fileInfoText;
     private TextView resultText;
+    private ScrollView resultScroll;
 
     private final List<Uri> selectedFileUris = new ArrayList<>();
     private List<String> selectedFileNames = new ArrayList<>();
@@ -56,27 +58,31 @@ public class MainActivity extends AppCompatActivity {
 
     private String outputDirPath;
     private Uri outputTreeUri;
+    private byte[] keyBytes; // 当前密钥
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        titleText = findViewById(R.id.titleText);
-        fileInfoText = findViewById(R.id.fileInfoText);
         selectFilesButton = findViewById(R.id.selectFilesButton);
         selectOutputButton = findViewById(R.id.selectOutputButton);
         decryptButton = findViewById(R.id.decryptButton);
-        resultScroll = findViewById(R.id.resultScroll);
+        detectKeyButton = findViewById(R.id.detectKeyButton);
+        loadKeyFromFileButton = findViewById(R.id.loadKeyFromFileButton);
+        keyInput = findViewById(R.id.keyInput);
+        fileInfoText = findViewById(R.id.fileInfoText);
         resultText = findViewById(R.id.resultText);
+        resultScroll = findViewById(R.id.resultScroll);
 
         selectFilesButton.setOnClickListener(v -> pickFiles());
         selectOutputButton.setOnClickListener(v -> pickOutputDir());
         decryptButton.setOnClickListener(v -> startDecryption());
+        detectKeyButton.setOnClickListener(v -> detectKeyFromSelectedFile());
+        loadKeyFromFileButton.setOnClickListener(v -> pickKeyFile());
 
         checkStoragePermission();
 
-        // 默认输出到 Downloads/RPGMDecrypted
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()) {
             setDefaultOutputDir();
         }
@@ -87,7 +93,7 @@ public class MainActivity extends AppCompatActivity {
                 Environment.DIRECTORY_DOWNLOADS), "RPGMDecrypted");
         defaultDir.mkdirs();
         outputDirPath = defaultDir.getAbsolutePath();
-        selectOutputButton.setText("输出目录: " + outputDirPath);
+        selectOutputButton.setText("📁 " + outputDirPath);
         updateDecryptButton();
     }
 
@@ -96,7 +102,7 @@ public class MainActivity extends AppCompatActivity {
             if (!Environment.isExternalStorageManager()) {
                 new AlertDialog.Builder(this)
                         .setTitle("需要存储权限")
-                        .setMessage("解密后的文件需要保存到设备存储。")
+                        .setMessage("解密后的图片和 System.json 文件需要读取权限。")
                         .setPositiveButton("去授权", (d, w) -> {
                             Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
                             intent.setData(Uri.parse("package:" + getPackageName()));
@@ -109,10 +115,9 @@ public class MainActivity extends AppCompatActivity {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
                     != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this,
-                        new String[]{
-                                Manifest.permission.READ_EXTERNAL_STORAGE,
-                                Manifest.permission.WRITE_EXTERNAL_STORAGE
-                        }, REQUEST_PERMISSION);
+                        new String[]{Manifest.permission.READ_EXTERNAL_STORAGE,
+                                Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                        REQUEST_PERMISSION);
             }
         }
     }
@@ -121,8 +126,6 @@ public class MainActivity extends AppCompatActivity {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
-        // 允许选择 .png_ 文件和所有文件
-        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/png", "application/octet-stream", "*/*"});
         intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         startActivityForResult(intent, REQUEST_FILE_PICK);
     }
@@ -136,6 +139,62 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void pickKeyFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        // 有些 System.json 可能被识别为 text
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/json", "text/plain", "*/*"});
+        startActivityForResult(intent, REQUEST_KEY_FILE_PICK);
+    }
+
+    private void detectKeyFromSelectedFile() {
+        if (selectedFileUris.isEmpty() || selectedFileUris.size() != 1) {
+            Toast.makeText(this, "请先选择 **一个** .png_ 文件用于密钥检测", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setMessage("正在检测密钥…");
+        progress.setIndeterminate(true);
+        progress.setCancelable(false);
+        progress.show();
+
+        new Thread(() -> {
+            try {
+                // 临时复制到缓存目录
+                File tempFile = new File(getCacheDir(), "detect_temp.png_");
+                try (InputStream is = getContentResolver().openInputStream(selectedFileUris.get(0));
+                     FileOutputStream fos = new FileOutputStream(tempFile)) {
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = is.read(buf)) > 0) fos.write(buf, 0, n);
+                }
+
+                String keyHex = RPGMDecrypter.detectKeyFromFile(tempFile);
+                tempFile.delete();
+
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    if (keyHex != null) {
+                        keyInput.setText(keyHex);
+                        keyBytes = RPGMDecrypter.hexToBytes(keyHex);
+                        appendResult("🔑 自动检测到密钥: " + keyHex + "\n");
+                        Toast.makeText(MainActivity.this, "密钥检测成功！", Toast.LENGTH_SHORT).show();
+                    } else {
+                        appendResult("⚠️ 无法自动检测密钥\n");
+                        Toast.makeText(MainActivity.this, "密钥检测失败", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    appendResult("❌ 密钥检测出错: " + e.getMessage() + "\n");
+                });
+            }
+        }).start();
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -147,10 +206,8 @@ public class MainActivity extends AppCompatActivity {
             totalSelectedSize = 0;
 
             if (data.getData() != null) {
-                // 单个文件
                 selectedFileUris.add(data.getData());
             } else if (data.getClipData() != null) {
-                // 多个文件
                 ClipData clipData = data.getClipData();
                 for (int i = 0; i < clipData.getItemCount(); i++) {
                     Uri uri = clipData.getItemAt(i).getUri();
@@ -158,7 +215,6 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
 
-            // 获取文件名和大小
             for (Uri uri : selectedFileUris) {
                 try (android.database.Cursor cursor = getContentResolver().query(
                         uri, null, null, null, null)) {
@@ -185,9 +241,48 @@ public class MainActivity extends AppCompatActivity {
                 getContentResolver().takePersistableUriPermission(treeUri, takeFlags);
                 outputTreeUri = treeUri;
                 outputDirPath = treeUri.toString();
-                selectOutputButton.setText("输出目录: " + getDisplayPath(treeUri));
+                selectOutputButton.setText("📁 " + getDisplayPath(treeUri));
                 updateDecryptButton();
             }
+        } else if (requestCode == REQUEST_KEY_FILE_PICK) {
+            // 从 System.json 加载密钥
+            Uri jsonUri = data.getData();
+            if (jsonUri == null) return;
+
+            new Thread(() -> {
+                try {
+                    InputStream is = getContentResolver().openInputStream(jsonUri);
+                    if (is == null) {
+                        runOnUiThread(() -> Toast.makeText(this, "无法读取文件", Toast.LENGTH_SHORT).show());
+                        return;
+                    }
+                    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = is.read(buf)) > 0) baos.write(buf, 0, n);
+                    is.close();
+
+                    String json = baos.toString("UTF-8");
+                    String key = RPGMDecrypter.extractKeyFromJson(json);
+
+                    runOnUiThread(() -> {
+                        if (key != null && !key.isEmpty()) {
+                            keyInput.setText(key);
+                            keyBytes = RPGMDecrypter.hexToBytes(key);
+                            appendResult("🔑 从 System.json 加载密钥: " + key + "\n");
+                            Toast.makeText(this, "密钥加载成功！", Toast.LENGTH_SHORT).show();
+                        } else {
+                            appendResult("⚠️ 文件中未找到 encryptionKey 字段\n");
+                            Toast.makeText(this, "未找到密钥", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                } catch (Exception e) {
+                    runOnUiThread(() -> {
+                        appendResult("❌ 读取密钥文件失败: " + e.getMessage() + "\n");
+                    });
+                }
+            }).start();
+
         } else if (requestCode == REQUEST_MANAGE_STORAGE) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 if (Environment.isExternalStorageManager()) {
@@ -213,17 +308,18 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // 过滤出 .png_ 文件
-        long pngUnderCount = selectedFileNames.stream().filter(n -> n.toLowerCase().endsWith(".png_")).count();
+        long pngUnderCount = 0;
+        for (String name : selectedFileNames) {
+            if (name.toLowerCase().endsWith(".png_")) pngUnderCount++;
+        }
 
         StringBuilder sb = new StringBuilder();
-        sb.append("📄 已选 ").append(count).append(" 个文件");
+        sb.append("📄 ").append(count).append(" 个文件");
         if (pngUnderCount < count) {
-            sb.append("（其中 ").append(pngUnderCount).append(" 个 .png_）");
+            sb.append("（").append(pngUnderCount).append(" 个 .png_）");
         }
-        sb.append("\n总共 ").append(formatFileSize(totalSelectedSize));
+        sb.append("  | 共 ").append(formatFileSize(totalSelectedSize));
 
-        // 列出文件名（最多 5 个）
         int show = Math.min(count, 5);
         for (int i = 0; i < show; i++) {
             sb.append("\n  • ").append(selectedFileNames.get(i));
@@ -238,14 +334,22 @@ public class MainActivity extends AppCompatActivity {
     private void updateDecryptButton() {
         decryptButton.setEnabled(!selectedFileUris.isEmpty() && outputDirPath != null);
         if (decryptButton.isEnabled()) {
-            decryptButton.setText("🛠 解密 " + selectedFileUris.size() + " 个文件");
+            String mode = (keyInput.getText().toString().trim().isEmpty()) ? "无密钥" : "有密钥";
+            decryptButton.setText("🛠 解密 " + selectedFileUris.size() + " 个文件 [" + mode + "]");
         } else {
-            decryptButton.setText("请选择文件");
+            decryptButton.setText("请选择文件和输出目录");
         }
     }
 
     private void startDecryption() {
         if (selectedFileUris.isEmpty() || outputDirPath == null) return;
+
+        // 读取密钥
+        String keyText = keyInput.getText().toString().trim();
+        byte[] key = null;
+        if (!keyText.isEmpty()) {
+            key = RPGMDecrypter.hexToBytes(keyText);
+        }
 
         ProgressDialog progress = new ProgressDialog(this);
         progress.setMessage("正在解密…");
@@ -281,26 +385,26 @@ public class MainActivity extends AppCompatActivity {
                         continue;
                     }
 
-                    byte[] decrypted = RPGMDecrypter.decryptStream(is, fileName);
+                    byte[] decrypted = RPGMDecrypter.decryptStream(is, key);
                     is.close();
 
                     if (decrypted == null) {
-                        log.append("⚠️ [").append(time).append("] ").append(fileName).append(" — 无法解密（可能不是有效 .png_）\n");
+                        // 尝试无密钥模式
+                        log.append("⚠️ [").append(time).append("] ").append(fileName)
+                                .append(" — 解密后非有效 PNG（密钥可能不正确）\n");
                         failed++;
                         continue;
                     }
 
-                    // 生成输出文件名：去掉 _ 后缀
                     String outName;
                     if (fileName.toLowerCase().endsWith(".png_")) {
-                        outName = fileName.substring(0, fileName.length() - 1); // .png_ → .png
+                        outName = fileName.substring(0, fileName.length() - 1);
                     } else if (!fileName.toLowerCase().endsWith(".png")) {
                         outName = fileName + ".png";
                     } else {
                         outName = fileName;
                     }
 
-                    // 保存到输出
                     if (useSAF) {
                         androidx.documentfile.provider.DocumentFile docDir =
                                 androidx.documentfile.provider.DocumentFile.fromTreeUri(this, Uri.parse(outputDirPath));
@@ -310,18 +414,9 @@ public class MainActivity extends AppCompatActivity {
                                 try (FileOutputStream fos = (FileOutputStream) getContentResolver().openOutputStream(outFile.getUri())) {
                                     if (fos != null) {
                                         fos.write(decrypted);
-                                        log.append("✅ [").append(time).append("] ").append(outName)
-                                                .append(" (").append(formatFileSize(decrypted.length)).append(")\n");
-                                        success++;
-                                    } else {
-                                        throw new Exception("Cannot open output stream");
                                     }
                                 }
-                            } else {
-                                throw new Exception("Cannot create output file");
                             }
-                        } else {
-                            throw new Exception("Invalid output directory");
                         }
                     } else {
                         File outFile = new File(outputDirPath, outName);
@@ -330,10 +425,11 @@ public class MainActivity extends AppCompatActivity {
                         try (FileOutputStream fos = new FileOutputStream(outFile)) {
                             fos.write(decrypted);
                         }
-                        log.append("✅ [").append(time).append("] ").append(outName)
-                                .append(" (").append(formatFileSize(decrypted.length)).append(")\n");
-                        success++;
                     }
+
+                    log.append("✅ [").append(time).append("] ").append(outName)
+                            .append(" (").append(formatFileSize(decrypted.length)).append(")\n");
+                    success++;
 
                 } catch (Exception e) {
                     log.append("❌ [").append(time).append("] ").append(fileName).append(" — ")
@@ -350,7 +446,8 @@ public class MainActivity extends AppCompatActivity {
                 progress.dismiss();
 
                 StringBuilder summary = new StringBuilder();
-                summary.append("━━━ 解密完成 ━━━\n");
+                String mode = (key != null) ? "🔑 有密钥模式" : "🔓 无密钥模式（跳过头部）";
+                summary.append("━━━ ").append(mode).append(" ━━━\n");
                 summary.append("✅ 成功: ").append(finalSuccess).append(" 个\n");
                 if (finalFailed > 0) {
                     summary.append("❌ 失败: ").append(finalFailed).append(" 个\n");
@@ -370,6 +467,14 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
+    private void appendResult(String line) {
+        runOnUiThread(() -> {
+            resultText.append(line);
+            resultScroll.setVisibility(View.VISIBLE);
+            resultScroll.post(() -> resultScroll.fullScroll(View.FOCUS_DOWN));
+        });
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
@@ -379,7 +484,7 @@ public class MainActivity extends AppCompatActivity {
                 setDefaultOutputDir();
                 Toast.makeText(this, "权限已授予", Toast.LENGTH_SHORT).show();
             } else {
-                Toast.makeText(this, "存储权限被拒绝，将使用 SAF", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "存储权限被拒绝", Toast.LENGTH_LONG).show();
             }
         }
     }
